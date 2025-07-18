@@ -6,7 +6,7 @@ import java.util.stream.Collectors;
 public class Main {
 
     // =================================================================================
-    // PARÂMETROS DO ALGORITMO GENÉTICO
+    // PARÂMETROS GLOBAIS E CONSTANTES DO ALGORITMO GENÉTICO
     // =================================================================================
     // O universo de todos os itens possíveis. A ordem aqui define a posição no cromossomo.
     private static final List<Item> UNIVERSO_ITENS = List.of(Item.values());
@@ -15,84 +15,57 @@ public class Main {
     // Gerador de números aleatórios para ser usado em todo o algoritmo.
     private static final Random random = new Random();
 
-    // Pesos para a função de fitness, conforme especificado no trabalho.
+    // Parâmetros de execução do AG, conforme especificado no documento do trabalho.
+    private static final int TAMANHO_POPULACAO = 50;
+    private static final int NUMERO_GERACOES = 100;
+    private static final int TAMANHO_TORNEIO = 3;
+    private static final double TAXA_DE_CROSSOVER = 0.8; // 80% de chance de aplicar o crossover.
+    private static final double TAXA_DE_MUTACAO = 0.05;  // 5% de chance para cada gene individualmente sofrer mutação.
+    private static final int NUMERO_ELITES = 1; // Número de melhores indivíduos a serem passados diretamente para a próxima geração.
+
+    // Pesos para a função de fitness, conforme a fórmula: fitness = 0.5 * suporte + 0.5 * confianca
     private static final double PESO_SUPORTE = 0.5;
     private static final double PESO_CONFIANCA = 0.5;
 
 
     // =================================================================================
-    // CLASSES E ENUMS ANINHADOS
+    // CLASSES E ENUMS ANINHADOS (ESTRUTURAS DE DADOS)
     // =================================================================================
-
-    /**
-     * Enum para representar cada item único possível em uma transação.
-     * Usar um Enum torna o código mais seguro, legível e eficiente do que usar Strings soltas.
-     */
     public enum Item {
         LEITE, PAO, MANTEIGA, CAFE, SUCO, BOLO
     }
 
-    /**
-     * Representa um indivíduo da população, ou seja, uma regra de associação X -> Y.
-     * Cada regra é codificada como um cromossomo e possui valores de suporte, confiança e fitness.
-     */
-    public static class Regra {
-        // O cromossomo que representa a regra, declarado como 'final' para garantir imutabilidade.
-        // 0: item não participa.
-        // 1: item pertence ao antecedente (X).
-        // 2: item pertence ao consequente (Y).
+    public static class Regra implements Comparable<Regra> {
         private final int[] cromossomo;
         private double suporte;
         private double confianca;
         private double fitness;
 
-        /**
-         * Construtor que gera uma Regra (cromossomo) aleatória e VÁLIDA.
-         */
         public Regra() {
-            int[] genesTemporarios; // Cria um array temporário não-final.
+            int[] genesTemporarios;
             do {
-                genesTemporarios = new int[TAMANHO_CROMOSSOMO]; // Instancia o array temporário dentro do loop.
+                genesTemporarios = new int[TAMANHO_CROMOSSOMO];
                 for (int i = 0; i < TAMANHO_CROMOSSOMO; i++) {
-                    // Preenche cada gene com 0, 1 ou 2 aleatoriamente.
                     genesTemporarios[i] = random.nextInt(3);
                 }
-            } while (!eRegraValida(genesTemporarios)); // Usa um método para validar o array temporário.
-
-            // Após o loop, temos certeza que 'genesTemporarios' é válido.
-            // Agora, e somente agora, atribuímos o array válido à nossa variável final.
+            } while (!eRegraValida(genesTemporarios));
             this.cromossomo = genesTemporarios;
         }
 
-        /**
-         * Construtor para criar uma Regra com um cromossomo específico (usado no crossover).
-         * @param cromossomo O vetor de genes do filho.
-         */
         public Regra(int[] cromossomo) {
             this.cromossomo = cromossomo;
         }
 
-        /**
-         * Verifica se um determinado cromossomo atende às três condições de validade.
-         * @param cromossomo O array de genes a ser validado.
-         * @return true se a regra for válida, false caso contrário.
-         */
-        private boolean eRegraValida(int[] cromossomo) {
+        public static boolean eRegraValida(int[] cromossomo) {
             boolean temAntecedente = false;
             boolean temConsequente = false;
             for (int gene : cromossomo) {
                 if (gene == 1) temAntecedente = true;
                 if (gene == 2) temConsequente = true;
             }
-            // A regra deve ter tanto antecedente quanto consequente.
-            // A intersecção entre X e Y já é garantida pela codificação (um gene não pode ser 1 e 2 ao mesmo tempo).
             return temAntecedente && temConsequente;
         }
 
-        /**
-         * Extrai o conjunto de itens do antecedente (X) a partir do cromossomo.
-         * @return Um Set<Item> contendo os itens do antecedente.
-         */
         public Set<Item> getAntecedenteX() {
             Set<Item> antecedente = new HashSet<>();
             for (int i = 0; i < TAMANHO_CROMOSSOMO; i++) {
@@ -101,10 +74,6 @@ public class Main {
             return antecedente;
         }
 
-        /**
-         * Extrai o conjunto de itens do consequente (Y) a partir do cromossomo.
-         * @return Um Set<Item> contendo os itens do consequente.
-         */
         public Set<Item> getConsequenteY() {
             Set<Item> consequente = new HashSet<>();
             for (int i = 0; i < TAMANHO_CROMOSSOMO; i++) {
@@ -112,152 +81,206 @@ public class Main {
             }
             return consequente;
         }
-        
+
         @Override
         public String toString() {
-            // Cria uma representação em String do vetor do cromossomo para fácil visualização.
-            StringJoiner sj = new StringJoiner(", ");
-            for (int gene : cromossomo) {
-                sj.add(String.valueOf(gene));
-            }
-            // Retorna uma string formatada com todas as informações da regra.
-            return String.format("Regra: %s -> %s (Fitness: %.4f, Suporte: %.4f, Confianca: %.4f) | Cromossomo: [%s]",
-                getAntecedenteX(), getConsequenteY(), this.fitness, this.suporte, this.confianca, sj.toString());
+            return String.format("Regra: %s -> %s (Fitness: %.4f, Suporte: %.4f, Confianca: %.4f)",
+                getAntecedenteX(), getConsequenteY(), this.fitness, this.suporte, this.confianca);
         }
 
-        // Getters e Setters para os atributos de avaliação.
         public double getFitness() { return fitness; }
         public void setFitness(double fitness) { this.fitness = fitness; }
+        public double getSuporte() { return suporte; }
         public void setSuporte(double suporte) { this.suporte = suporte; }
+        public double getConfianca() { return confianca; }
         public void setConfianca(double confianca) { this.confianca = confianca; }
-    }
+        public int[] getCromossomo() { return Arrays.copyOf(cromossomo, cromossomo.length); }
 
-
-    // =================================================================================
-    // LÓGICA DE AVALIAÇÃO (FITNESS)
-    // =================================================================================
-
-    /**
-     * Avalia uma única regra, calculando seu suporte, confiança e fitness final.
-     * Este método orquestra a avaliação completa de um indivíduo.
-     * @param regra A regra a ser avaliada.
-     * @param transacoes O conjunto de dados de todas as transações.
-     */
-    public static void avaliarRegra(Regra regra, List<Set<Item>> transacoes) {
-        // 1. Calcula o suporte da regra.
-        double suporte = calcularSuporte(regra, transacoes);
-        regra.setSuporte(suporte);
-
-        // 2. Calcula a confiança da regra.
-        double confianca = calcularConfianca(regra, transacoes);
-        regra.setConfianca(confianca);
-
-        // 3. Calcula o fitness usando a combinação linear ponderada.
-        double fitness = (PESO_SUPORTE * suporte) + (PESO_CONFIANCA * confianca);
-        regra.setFitness(fitness);
-    }
-
-    /**
-     * Calcula o suporte de uma regra.
-     * Suporte é a proporção de transações que contêm TODOS os itens da regra (X e Y).
-     * @param regra A regra a ser avaliada.
-     * @param transacoes O conjunto de dados de todas as transações.
-     * @return O valor do suporte (entre 0 e 1).
-     */
-    private static double calcularSuporte(Regra regra, List<Set<Item>> transacoes) {
-        // Combina os itens do antecedente (X) e consequente (Y) em um único conjunto.
-        Set<Item> itensDaRegra = new HashSet<>();
-        itensDaRegra.addAll(regra.getAntecedenteX());
-        itensDaRegra.addAll(regra.getConsequenteY());
-
-        int contadorSuporte = 0;
-        // Itera sobre cada transação para verificar se ela "suporta" a regra.
-        for (Set<Item> transacao : transacoes) {
-            // Se a transação contém todos os itens da regra, incrementa o contador.
-            if (transacao.containsAll(itensDaRegra)) {
-                contadorSuporte++;
-            }
+        @Override
+        public int compareTo(Regra outra) {
+            return Double.compare(outra.fitness, this.fitness);
         }
-        // Retorna a proporção: (transações que suportam a regra) / (total de transações).
+    }
+
+
+    // =================================================================================
+    // LÓGICA DE AVALIAÇÃO (FUNÇÃO DE FITNESS)
+    // =================================================================================
+    public static void avaliarPopulacao(List<Regra> populacao, List<Set<Item>> transacoes) {
+        for (Regra regra : populacao) {
+            double suporte = calcularSuporte(regra, transacoes);
+            double confianca = calcularConfianca(regra, transacoes);
+            double fitness = (PESO_SUPORTE * suporte) + (PESO_CONFIANCA * confianca);
+            regra.setSuporte(suporte);
+            regra.setConfianca(confianca);
+            regra.setFitness(fitness);
+        }
+    }
+
+    private static double calcularSuporte(Regra regra, List<Set<Item>> transacoes) {
+        Set<Item> itensDaRegra = new HashSet<>(regra.getAntecedenteX());
+        itensDaRegra.addAll(regra.getConsequenteY());
+        long contadorSuporte = transacoes.stream().filter(t -> t.containsAll(itensDaRegra)).count();
         return (double) contadorSuporte / transacoes.size();
     }
 
-    /**
-     * Calcula a confiança de uma regra.
-     * Confiança é a proporção de transações que contêm Y, DADO que elas já contêm X.
-     * @param regra A regra a ser avaliada.
-     * @param transacoes O conjunto de dados de todas as transações.
-     * @return O valor da confiança (entre 0 e 1).
-     */
     private static double calcularConfianca(Regra regra, List<Set<Item>> transacoes) {
         Set<Item> antecedenteX = regra.getAntecedenteX();
         Set<Item> consequenteY = regra.getConsequenteY();
-
-        int contadorSuporteX = 0; // Conta transações que contêm o antecedente X.
-        int contadorSuporteXY = 0; // Conta transações que contêm AMBOS, X e Y.
-
-        // Itera sobre cada transação do conjunto de dados.
-        for (Set<Item> transacao : transacoes) {
-            // Primeiro, verifica se a transação contém o antecedente.
-            if (transacao.containsAll(antecedenteX)) {
-                contadorSuporteX++;
-                // Se contém o antecedente, agora verifica se também contém o consequente.
-                if (transacao.containsAll(consequenteY)) {
-                    contadorSuporteXY++;
-                }
-            }
-        }
-        // Se nenhuma transação contém o antecedente, a confiança é 0 para evitar divisão por zero.
-        if (contadorSuporteX == 0) {
-            return 0.0;
-        }
-        // Retorna a proporção: (transações com X e Y) / (transações com X).
+        long contadorSuporteX = transacoes.stream().filter(t -> t.containsAll(antecedenteX)).count();
+        if (contadorSuporteX == 0) return 0.0;
+        long contadorSuporteXY = transacoes.stream()
+            .filter(t -> t.containsAll(antecedenteX) && t.containsAll(consequenteY))
+            .count();
         return (double) contadorSuporteXY / contadorSuporteX;
     }
 
 
     // =================================================================================
-    // PONTO DE ENTRADA DA APLICAÇÃO
+    // OPERADORES GENÉTICOS
     // =================================================================================
+    public static List<Regra> inicializarPopulacao() {
+        List<Regra> populacao = new ArrayList<>();
+        for (int i = 0; i < TAMANHO_POPULACAO; i++) {
+            populacao.add(new Regra());
+        }
+        return populacao;
+    }
 
+    private static Regra selecaoPorTorneio(List<Regra> populacao) {
+        Regra melhorDoTorneio = null;
+        for (int i = 0; i < TAMANHO_TORNEIO; i++) {
+            Regra competidor = populacao.get(random.nextInt(populacao.size()));
+            if (melhorDoTorneio == null || competidor.getFitness() > melhorDoTorneio.getFitness()) {
+                melhorDoTorneio = competidor;
+            }
+        }
+        return melhorDoTorneio;
+    }
+
+    private static List<Regra> crossover(Regra pai1, Regra pai2) {
+        int[] cromossomoPai1 = pai1.getCromossomo();
+        int[] cromossomoPai2 = pai2.getCromossomo();
+        int[] cromossomoFilho1 = new int[TAMANHO_CROMOSSOMO];
+        int[] cromossomoFilho2 = new int[TAMANHO_CROMOSSOMO];
+        int pontoDeCorte = random.nextInt(TAMANHO_CROMOSSOMO - 1) + 1;
+        System.arraycopy(cromossomoPai1, 0, cromossomoFilho1, 0, pontoDeCorte);
+        System.arraycopy(cromossomoPai2, pontoDeCorte, cromossomoFilho1, pontoDeCorte, TAMANHO_CROMOSSOMO - pontoDeCorte);
+        System.arraycopy(cromossomoPai2, 0, cromossomoFilho2, 0, pontoDeCorte);
+        System.arraycopy(cromossomoPai1, pontoDeCorte, cromossomoFilho2, pontoDeCorte, TAMANHO_CROMOSSOMO - pontoDeCorte);
+        return List.of(new Regra(cromossomoFilho1), new Regra(cromossomoFilho2));
+    }
+
+    private static void mutacao(Regra regra) {
+        int[] cromossomo = regra.getCromossomo();
+        for (int i = 0; i < TAMANHO_CROMOSSOMO; i++) {
+            if (random.nextDouble() < TAXA_DE_MUTACAO) {
+                cromossomo[i] = random.nextInt(3);
+            }
+        }
+    }
+
+
+    // =================================================================================
+    // PONTO DE ENTRADA E EXECUÇÃO PRINCIPAL DO ALGORITMO
+    // =================================================================================
     public static void main(String[] args) {
-        // ETAPA 1: DEFINIR O CONJUNTO DE DADOS
-        // Estas são as 15 transações fornecidas no documento do trabalho.
-        // Usamos um Set para cada transação para evitar duplicatas e facilitar as operações de conjunto.
+        System.out.println(">>> INICIANDO EXECUÇÃO DO ALGORITMO GENÉTICO <<<");
+
+        // ETAPA 1: Carregar o conjunto de dados.
         List<Set<Item>> transacoes = List.of(
-            Set.of(Item.LEITE, Item.PAO, Item.MANTEIGA),
-            Set.of(Item.PAO, Item.MANTEIGA),
-            Set.of(Item.LEITE, Item.CAFE),
-            Set.of(Item.PAO, Item.SUCO, Item.MANTEIGA),
-            Set.of(Item.CAFE, Item.BOLO),
-            Set.of(Item.LEITE, Item.PAO, Item.CAFE),
-            Set.of(Item.MANTEIGA, Item.BOLO, Item.CAFE),
-            Set.of(Item.PAO, Item.BOLO),
-            Set.of(Item.SUCO, Item.CAFE),
-            Set.of(Item.LEITE, Item.MANTEIGA, Item.BOLO),
-            Set.of(Item.PAO, Item.CAFE, Item.SUCO),
-            Set.of(Item.LEITE, Item.SUCO),
-            Set.of(Item.PAO, Item.MANTEIGA, Item.CAFE),
-            Set.of(Item.BOLO, Item.SUCO),
+            Set.of(Item.LEITE, Item.PAO, Item.MANTEIGA), Set.of(Item.PAO, Item.MANTEIGA),
+            Set.of(Item.LEITE, Item.CAFE), Set.of(Item.PAO, Item.SUCO, Item.MANTEIGA),
+            Set.of(Item.CAFE, Item.BOLO), Set.of(Item.LEITE, Item.PAO, Item.CAFE),
+            Set.of(Item.MANTEIGA, Item.BOLO, Item.CAFE), Set.of(Item.PAO, Item.BOLO),
+            Set.of(Item.SUCO, Item.CAFE), Set.of(Item.LEITE, Item.MANTEIGA, Item.BOLO),
+            Set.of(Item.PAO, Item.CAFE, Item.SUCO), Set.of(Item.LEITE, Item.SUCO),
+            Set.of(Item.PAO, Item.MANTEIGA, Item.CAFE), Set.of(Item.BOLO, Item.SUCO),
             Set.of(Item.LEITE, Item.PAO, Item.MANTEIGA, Item.CAFE)
         );
 
-        System.out.println(">>> INICIANDO TESTE DA FUNÇÃO DE AVALIAÇÃO <<<");
-        System.out.println("Total de Transações: " + transacoes.size());
+        // Estruturas para armazenar os dados para os gráficos
+        List<Double> melhoresFitnessPorGeracao = new ArrayList<>();
+        List<Double> mediaFitnessPorGeracao = new ArrayList<>();
+        List<Double> suporteMelhorIndividuo = new ArrayList<>();
+        List<Double> confiancaMelhorIndividuo = new ArrayList<>();
+        
+        // ETAPA 2: Criar a população inicial.
+        System.out.println("\n[Geração 0] Inicializando população de " + TAMANHO_POPULACAO + " regras...");
+        List<Regra> populacao = inicializarPopulacao();
+        avaliarPopulacao(populacao, transacoes);
 
-        // ETAPA 2: TESTAR A AVALIAÇÃO COM UMA REGRA FIXA PARA VALIDAÇÃO
-        // Criamos uma regra conhecida, {PÃO} -> {MANTEIGA}, para verificar se os cálculos estão corretos.
-        // O cromossomo correspondente é [LEITE, PAO, MANTEIGA, CAFE, SUCO, BOLO] -> [0, 1, 2, 0, 0, 0].
-        System.out.println("\n--- Teste 1: Regra Fixa {PÃO} -> {MANTEIGA} ---");
-        Regra regraFixa = new Regra(new int[]{0, 1, 2, 0, 0, 0});
-        avaliarRegra(regraFixa, transacoes); // Chama a função de avaliação.
-        System.out.println(regraFixa); // Imprime o resultado completo da regra.
+        // ETAPA 3: Loop de Evolução (ciclo principal do AG).
+        for (int g = 1; g <= NUMERO_GERACOES; g++) {
+            List<Regra> novaPopulacao = new ArrayList<>();
+            
+            // **IMPLEMENTAÇÃO DO ELITISMO**
+            // Ordena a população atual para encontrar o melhor indivíduo.
+            Collections.sort(populacao);
+            // Adiciona o(s) melhor(es) indivíduo(s) diretamente à nova população.
+            for (int i = 0; i < NUMERO_ELITES; i++) {
+                novaPopulacao.add(new Regra(populacao.get(i).getCromossomo()));
+            }
 
-        // ETAPA 3: TESTAR A AVALIAÇÃO COM UMA REGRA ALEATÓRIA
-        // Isso verifica se a criação aleatória e a avaliação funcionam em conjunto.
-        System.out.println("\n--- Teste 2: Regra Aleatória Válida ---");
-        Regra regraAleatoria = new Regra(); // Cria uma regra aleatória válida.
-        avaliarRegra(regraAleatoria, transacoes); // Avalia a regra criada.
-        System.out.println(regraAleatoria); // Imprime o resultado.
+            // Repete até que a nova população atinja o tamanho desejado.
+            while (novaPopulacao.size() < TAMANHO_POPULACAO) {
+                Regra pai1 = selecaoPorTorneio(populacao);
+                Regra pai2 = selecaoPorTorneio(populacao);
+
+                List<Regra> filhos;
+                if (random.nextDouble() < TAXA_DE_CROSSOVER) {
+                    filhos = crossover(pai1, pai2);
+                } else {
+                    filhos = List.of(new Regra(pai1.getCromossomo()), new Regra(pai2.getCromossomo()));
+                }
+                
+                for(Regra filho : filhos) {
+                    mutacao(filho);
+                    if (Regra.eRegraValida(filho.getCromossomo())) {
+                        novaPopulacao.add(filho);
+                        if(novaPopulacao.size() == TAMANHO_POPULACAO) break;
+                    }
+                }
+            }
+            
+            populacao = novaPopulacao;
+            avaliarPopulacao(populacao, transacoes);
+
+            // Coleta de dados da geração atual para os gráficos.
+            Collections.sort(populacao);
+            Regra melhorDaGeracao = populacao.get(0);
+            double mediaFitness = populacao.stream().mapToDouble(Regra::getFitness).average().orElse(0.0);
+            
+            melhoresFitnessPorGeracao.add(melhorDaGeracao.getFitness());
+            mediaFitnessPorGeracao.add(mediaFitness);
+            suporteMelhorIndividuo.add(melhorDaGeracao.getSuporte());
+            confiancaMelhorIndividuo.add(melhorDaGeracao.getConfianca());
+
+            if (g % 10 == 0 || g == 1) { 
+                System.out.printf("[Geração %3d] Melhor Fitness: %.4f | Média Fitness: %.4f | Melhor Regra: %s%n", 
+                    g, melhorDaGeracao.getFitness(), mediaFitness, melhorDaGeracao);
+            }
+        }
+
+        // ETAPA 4: Apresentar os resultados finais.
+        System.out.println("\n>>> EXECUÇÃO FINALIZADA <<<");
+        Collections.sort(populacao);
+        Regra melhorRegraEncontrada = populacao.get(0);
+        
+        System.out.println("\nMelhor regra encontrada após " + NUMERO_GERACOES + " gerações:");
+        System.out.println(melhorRegraEncontrada);
+        
+        System.out.println("\n--- DADOS PARA GRÁFICOS ---");
+        System.out.println("\n// Figura 1: Evolução do melhor e da média de fitness por geração.");
+        System.out.println("dados_melhor_fitness = " + melhoresFitnessPorGeracao);
+        System.out.println("dados_media_fitness = " + mediaFitnessPorGeracao);
+        
+        System.out.println("\n// Figura 2: Evolução de suporte e confiança do melhor indivíduo.");
+        System.out.println("dados_suporte_melhor = " + suporteMelhorIndividuo);
+        System.out.println("dados_confianca_melhor = " + confiancaMelhorIndividuo);
+
+        System.out.println("\n// Figura 3: Histograma de distribuição de fitness na população final.");
+        List<Double> fitnessPopulacaoFinal = populacao.stream().map(Regra::getFitness).collect(Collectors.toList());
+        System.out.println("dados_fitness_populacao_final = " + fitnessPopulacaoFinal);
     }
 }
