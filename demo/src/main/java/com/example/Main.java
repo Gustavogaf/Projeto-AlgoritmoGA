@@ -16,7 +16,7 @@ public class Main {
     private static final Random random = new Random();
 
     // Parâmetros de execução do AG, conforme especificado no documento do trabalho.
-    private static final int TAMANHO_POPULACAO = 50;
+    private static final int TAMANHO_POPULACAO = 100;
     private static final int NUMERO_GERACOES = 100;
     private static final int TAMANHO_TORNEIO = 3;
     private static final double TAXA_DE_CROSSOVER = 0.8; // 80% de chance de aplicar o crossover.
